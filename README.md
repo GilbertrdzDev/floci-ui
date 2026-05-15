@@ -229,6 +229,12 @@ Remaining gaps:
 
 ## Setup
 
+Prerequisites:
+
+- Node.js and npm
+- [Bun](https://bun.sh/) for `npm run dev:api` in `packages/api`
+- Docker, if you want to run Floci with the published container image shown below
+
 Install dependencies:
 
 ```bash
@@ -241,19 +247,43 @@ Create local environment:
 cp .env.example .env
 ```
 
-Start Floci core:
+For local development, the UI needs all three of these components running:
+
+1. Floci backend on `http://localhost:4566`
+2. The floci-ui API backend on `http://localhost:3001` via `npm run dev:api`
+3. The frontend dev server on `http://localhost:3000` via `npm run dev`
+
+The frontend expects `/api/*` endpoints from `packages/api`, so running only `npm run dev` is not enough.
+
+If you are connecting to a real Floci backend, make sure `.env` contains:
 
 ```bash
-cd ../floci
-./mvnw clean quarkus:dev
+VITE_MOCK_MODE=false
 ```
 
-Start Floci UI:
+`.env.example` already includes that value.
+
+Example startup sequence:
+
+Terminal 1:
 
 ```bash
-cd ../floci-ui
+docker run --rm -p 4566:4566 floci/floci:latest
+```
+
+Terminal 2:
+
+```bash
+npm run dev:api
+```
+
+Terminal 3:
+
+```bash
 npm run dev
 ```
+
+If you are developing Floci core from source instead of Docker, start that repo however you normally do, as long as it is available on `http://localhost:4566`.
 
 Open:
 
