@@ -16,7 +16,10 @@ export class AzureStorageAdapter implements CloudServiceAdapter {
     }
 
     async list(query: ResourceQuery = {}): Promise<CloudResource[]> {
-        const xml = await this.azureFetch('/?comp=list', {method: 'GET'}).then((res) => res.text())
+        const res = await this.azureFetch('/?comp=list', {method: 'GET'}, {emptyOnNotFound: true})
+        if (!res) return []
+
+        const xml = await res.text()
         return filterBySearch(parseContainers(xml), query.search)
     }
 
@@ -37,7 +40,7 @@ export class AzureStorageAdapter implements CloudServiceAdapter {
         await this.azureFetch(`/${encodeURIComponent(id)}?restype=container`, {method: 'DELETE'})
     }
 
-    private async azureFetch(path: string, init: RequestInit): Promise<Response> {
+    private async azureFetch(path: string, init: RequestInit, options: {emptyOnNotFound?: boolean} = {}): Promise<Response | null> {
         const res = await fetch(`${this.props.endpoint}${path}`, {
             ...init,
             headers: {
@@ -45,6 +48,8 @@ export class AzureStorageAdapter implements CloudServiceAdapter {
                 ...(init.headers ?? {}),
             },
         })
+
+        if (options.emptyOnNotFound && res.status === 404) return null
 
         if (!res.ok) {
             throw new Error(`Azure Blob request failed: HTTP ${res.status}`)

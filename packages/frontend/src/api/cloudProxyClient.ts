@@ -1,5 +1,5 @@
 import {apiDelete, apiGet, apiPost} from './floci-client'
-import type {CloudDescriptor, CloudProvider, CloudServiceDescriptor, CloudServiceType} from '@/types/cloud'
+import type {CloudDescriptor, CloudProvider, CloudServiceDescriptor, CloudServiceType, CloudStatus} from '@/types/cloud'
 import type {CloudResource} from '@/types/resource'
 import type {ServiceSchema} from '@/types/schema'
 
@@ -9,6 +9,10 @@ export function listClouds(signal?: AbortSignal): Promise<CloudDescriptor[]> {
 
 export function listCloudServices(cloud: CloudProvider, signal?: AbortSignal): Promise<CloudServiceDescriptor[]> {
     return apiGet(`/clouds/${cloud}/services`, 'cloud-proxy', signal)
+}
+
+export function getCloudStatus(cloud: CloudProvider, signal?: AbortSignal): Promise<CloudStatus> {
+    return apiGet(`/clouds/${cloud}/status`, 'cloud-proxy', signal)
 }
 
 export function getServiceSchema(cloud: CloudProvider, service: CloudServiceType, signal?: AbortSignal): Promise<ServiceSchema> {

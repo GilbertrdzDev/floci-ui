@@ -17,6 +17,15 @@ export interface CloudServiceDescriptor {
     availability: CloudAvailability
 }
 
+export interface CloudStatus {
+    cloud: CloudProvider
+    adapterRegistered: boolean
+    runtime: 'reachable' | 'unavailable' | 'coming_soon'
+    endpoint: string | null
+    checkedAt: string
+    error: string | null
+}
+
 export type FieldType = 'text' | 'select'
 
 export interface FieldSchema {

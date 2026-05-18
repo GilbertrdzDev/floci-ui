@@ -1,9 +1,10 @@
 import {useMemo, useState} from 'react'
-import {Eye, Filter, RefreshCw, Table2, Workflow} from 'lucide-react'
+import {ChevronDown, ChevronUp, Eye, Filter, Plus, RefreshCw, Table2, Workflow} from 'lucide-react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {
     createCloudResource,
     deleteCloudResource,
+    getCloudStatus,
     getServiceSchema,
     listCloudResources,
 } from '@/api/cloudProxyClient'
@@ -22,11 +23,18 @@ export function DynamicResourceView({cloud, service}: DynamicResourceViewProps) 
     const qc = useQueryClient()
     const [search, setSearch] = useState('')
     const [selected, setSelected] = useState<CloudResource | undefined>()
+    const [createOpen, setCreateOpen] = useState(false)
     const resourcesKey = useMemo(() => ['cloud-resources', cloud, service, search], [cloud, service, search])
 
     const schemaQuery = useQuery({
         queryKey: ['cloud-schema', cloud, service],
         queryFn: ({signal}) => getServiceSchema(cloud, service, signal),
+    })
+
+    const statusQuery = useQuery({
+        queryKey: ['cloud-status', cloud],
+        queryFn: ({signal}) => getCloudStatus(cloud, signal),
+        refetchInterval: 10_000,
     })
 
     const resourcesQuery = useQuery({
@@ -72,6 +80,14 @@ export function DynamicResourceView({cloud, service}: DynamicResourceViewProps) 
 
     const schema = schemaQuery.data
     const resources = resourcesQuery.data ?? []
+    const runtimeState = statusQuery.isLoading
+        ? 'Checking runtime'
+        : statusQuery.data?.runtime === 'reachable'
+            ? 'Runtime reachable'
+            : statusQuery.data?.runtime === 'unavailable'
+                ? 'Runtime unavailable'
+                : 'Coming soon'
+    const runtimeClass = statusQuery.data?.runtime === 'unavailable' ? 'unavailable' : 'ready'
 
     return (
         <div className="dynamic-resource-view">
@@ -82,28 +98,21 @@ export function DynamicResourceView({cloud, service}: DynamicResourceViewProps) 
                         <h3>{schema.displayName}</h3>
                     </div>
                     <div className="schema-action-list">
-                        {schema.actions.map((action) => <span key={action} className="schema-action">{action}</span>)}
+                        <span className={`runtime-state ${runtimeClass}`}>{runtimeState}</span>
+                        <span className="schema-action resource-count">{resources.length} resources</span>
                     </div>
                 </div>
 
                 <div className="dynamic-stage-grid">
-                    <FeatureTile icon={Filter} title="Filters" value={`${schema.filters.length}`}/>
-                    <FeatureTile icon={Table2} title="Columns" value={`${schema.columns.length}`}/>
-                    <FeatureTile icon={Workflow} title="Actions" value={`${schema.actions.length}`}/>
-                    <FeatureTile icon={Eye} title="Inspector" value="Enabled"/>
+                    <FeatureTile icon={Filter} title="Dynamic Filters" value={`${schema.filters.length}`} detail="Schema-driven search and future filters"/>
+                    <FeatureTile icon={Table2} title="Resources Table" value={`${schema.columns.length} columns`} detail="Normalized across AWS and Azure"/>
+                    <FeatureTile icon={Workflow} title="Dynamic Actions" value={schema.actions.join(', ')} detail="Rendered from adapter capabilities"/>
+                    <FeatureTile icon={Eye} title="Resource Inspector" value="Enabled" detail="Same normalized resource contract"/>
                 </div>
             </section>
 
             <div className="resource-workbench">
                 <section className="resource-main">
-                    <div className="resource-action-panel">
-                        <div>
-                            <p className="eyebrow">Dynamic Actions</p>
-                            <h3>Create {schema.service} resource</h3>
-                        </div>
-                        <DynamicFormRenderer schema={schema} isSubmitting={createMut.isPending} onSubmit={(values) => createMut.mutate(values)}/>
-                    </div>
-
                     <section className="table-panel">
                         <div className="input-row resource-table-bar">
                             <div>
@@ -112,12 +121,22 @@ export function DynamicResourceView({cloud, service}: DynamicResourceViewProps) 
                             </div>
                             <div className="resource-table-tools">
                                 <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter resources"/>
+                                <button className="button" type="button" onClick={() => setCreateOpen((open) => !open)}>
+                                    <Plus size={14}/>
+                                    Create
+                                    {createOpen ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                                </button>
                                 <button className="button" type="button" onClick={() => resourcesQuery.refetch()}>
                                     <RefreshCw size={14}/>
                                     Refresh
                                 </button>
                             </div>
                         </div>
+                        {createOpen && (
+                            <div className="resource-create-inline">
+                                <DynamicFormRenderer schema={schema} isSubmitting={createMut.isPending} onSubmit={(values) => createMut.mutate(values)}/>
+                            </div>
+                        )}
                         <ResourceTable
                             schema={schema}
                             resources={resources}
@@ -134,13 +153,14 @@ export function DynamicResourceView({cloud, service}: DynamicResourceViewProps) 
     )
 }
 
-function FeatureTile({icon, title, value}: {icon: React.ElementType; title: string; value: string}) {
+function FeatureTile({icon, title, value, detail}: {icon: React.ElementType; title: string; value: string; detail: string}) {
     const Icon = icon
     return (
         <div className="feature-tile">
             <Icon size={22}/>
             <span>{title}</span>
             <strong>{value}</strong>
+            <small>{detail}</small>
         </div>
     )
 }

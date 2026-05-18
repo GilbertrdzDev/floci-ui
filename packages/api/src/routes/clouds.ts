@@ -14,6 +14,12 @@ export function createCloudRoutes(service: CloudProxyService = createCloudProxyS
         return c.json(service.services(cloud))
     })
 
+    app.get('/:cloud/status', async (c) => {
+        const cloud = c.req.param('cloud') as CloudProvider
+        if (!isCloudProvider(cloud)) return c.json({error: 'Unknown cloud'}, 404)
+        return c.json(await service.status(cloud))
+    })
+
     app.get('/:cloud/services/:service/schema', (c) => {
         const cloud = c.req.param('cloud') as CloudProvider
         const serviceType = c.req.param('service') as CloudServiceType

@@ -4,6 +4,7 @@ import type {
     CloudResource,
     CloudServiceDescriptor,
     CloudServiceType,
+    CloudStatus,
     CreateResourceInput,
     ResourceQuery,
     ServiceSchema,
@@ -41,6 +42,41 @@ export class CloudProxyService {
         return storageSchemaFor(cloud)
     }
 
+    async status(cloud: CloudProvider): Promise<CloudStatus> {
+        const adapter = this.registry.get(cloud, 'storage')
+        if (cloud === 'gcp' || !adapter) {
+            return {
+                cloud,
+                adapterRegistered: false,
+                runtime: 'coming_soon',
+                endpoint: endpointFor(cloud),
+                checkedAt: new Date().toISOString(),
+                error: null,
+            }
+        }
+
+        try {
+            await adapter.list()
+            return {
+                cloud,
+                adapterRegistered: true,
+                runtime: 'reachable',
+                endpoint: endpointFor(cloud),
+                checkedAt: new Date().toISOString(),
+                error: null,
+            }
+        } catch (error) {
+            return {
+                cloud,
+                adapterRegistered: true,
+                runtime: 'unavailable',
+                endpoint: endpointFor(cloud),
+                checkedAt: new Date().toISOString(),
+                error: error instanceof Error ? error.message : 'Runtime check failed',
+            }
+        }
+    }
+
     async listResources(cloud: CloudProvider, service: CloudServiceType, query: ResourceQuery): Promise<CloudResource[]> {
         return this.requireAdapter(cloud, service).list(query)
     }
@@ -62,4 +98,10 @@ export class CloudProxyService {
         if (!adapter) throw new Error(`No adapter registered for ${cloud}/${service}`)
         return adapter
     }
+}
+
+function endpointFor(cloud: CloudProvider): string | null {
+    if (cloud === 'aws') return process.env.FLOCI_ENDPOINT ?? 'http://localhost:4566'
+    if (cloud === 'azure') return process.env.FLOCI_AZURE_ENDPOINT ?? process.env.FLOCI_AZ_ENDPOINT ?? 'http://localhost:4577'
+    return null
 }

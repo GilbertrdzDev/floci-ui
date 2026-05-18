@@ -8,6 +8,7 @@ export function ResourceInspector({resource}: ResourceInspectorProps) {
     if (!resource) {
         return (
             <div className="resource-inspector empty compact">
+                <p className="eyebrow">Resource Inspector</p>
                 <h3>Select a resource</h3>
                 <p>Inspect normalized metadata returned by the cloud proxy.</p>
             </div>

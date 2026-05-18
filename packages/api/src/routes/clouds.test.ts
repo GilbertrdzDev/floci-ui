@@ -60,4 +60,24 @@ describe('cloud schema routes', () => {
 
         expect(res.status).toBe(404)
     })
+
+    test('returns AWS cloud status', async () => {
+        const res = await appWithRoutes().request('/api/clouds/aws/status')
+        const body = await res.json()
+
+        expect(res.status).toBe(200)
+        expect(body.cloud).toBe('aws')
+        expect(body.adapterRegistered).toBe(true)
+        expect(body.runtime).toBe('reachable')
+    })
+
+    test('returns GCP as coming soon in cloud status', async () => {
+        const res = await appWithRoutes().request('/api/clouds/gcp/status')
+        const body = await res.json()
+
+        expect(res.status).toBe(200)
+        expect(body.cloud).toBe('gcp')
+        expect(body.adapterRegistered).toBe(false)
+        expect(body.runtime).toBe('coming_soon')
+    })
 })

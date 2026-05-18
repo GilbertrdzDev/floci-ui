@@ -14,3 +14,12 @@ export interface CloudServiceDescriptor {
     displayName: string
     availability: CloudAvailability
 }
+
+export interface CloudStatus {
+    cloud: CloudProvider
+    adapterRegistered: boolean
+    runtime: 'reachable' | 'unavailable' | 'coming_soon'
+    endpoint: string | null
+    checkedAt: string
+    error: string | null
+}
