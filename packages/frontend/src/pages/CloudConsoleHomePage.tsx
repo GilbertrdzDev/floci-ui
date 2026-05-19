@@ -1,15 +1,16 @@
 import {type ElementType, useMemo} from 'react'
-import {Cloud, Database, ExternalLink, MessageSquare, Radio, Route, ShieldCheck, Table2, Zap} from 'lucide-react'
+import {Cloud, Cpu, Database, ExternalLink, MessageSquare, Radio, Route, ShieldCheck, Table2, Zap} from 'lucide-react'
 import {Navigate, useNavigate, useParams} from 'react-router-dom'
 import {useQuery} from '@tanstack/react-query'
 import {getCloudStatus, listClouds, listCloudResources, listCloudServices} from '@/api/cloudProxyClient'
+import {listEksResources} from '@/api/aws/eks.api'
+import {listRdsResources} from '@/api/aws/rds.api'
 import {CloudSelector} from '@/components/CloudSelector'
 import type {CloudProvider, CloudStatus} from '@/types/cloud'
 
 const SERVICE_PLACEHOLDERS = [
     {id: 'queue', label: 'Queue', icon: MessageSquare},
     {id: 'function', label: 'Function', icon: Zap},
-    {id: 'database', label: 'Database', icon: Table2},
 ]
 
 export function CloudConsoleHomePage() {
@@ -41,8 +42,62 @@ export function CloudConsoleHomePage() {
             && statusQuery.data?.runtime === 'reachable',
     })
 
+    const eksResourcesQuery = useQuery({
+        queryKey: ['cloud-console-resources', 'aws', 'eks'],
+        queryFn: ({signal}) => listEksResources(signal),
+        enabled: cloud === 'aws' && statusQuery.data?.runtime === 'reachable',
+    })
+
+    const rdsResourcesQuery = useQuery({
+        queryKey: ['cloud-console-resources', 'aws', 'rds'],
+        queryFn: ({signal}) => listRdsResources(signal),
+        enabled: cloud === 'aws' && statusQuery.data?.runtime === 'reachable',
+    })
+
     const serviceCards = useMemo(() => {
         const storage = servicesQuery.data?.find((service) => service.service === 'storage')
+        const awsServiceCards = cloud === 'aws'
+            ? [
+                {
+                    id: 'eks',
+                    label: 'EKS',
+                    status: 'available' as const,
+                    count: eksResourcesQuery.data?.length,
+                    icon: Cpu,
+                    route: '/eks',
+                    meta: awsMetaLabel(statusQuery.data, eksResourcesQuery.isLoading, 'clusters'),
+                },
+                {
+                    id: 'rds',
+                    label: 'RDS',
+                    status: 'available' as const,
+                    count: rdsResourcesQuery.data?.length,
+                    icon: Table2,
+                    route: '/rds',
+                    meta: awsMetaLabel(statusQuery.data, rdsResourcesQuery.isLoading, 'instances'),
+                },
+            ]
+            : [
+                {
+                    id: 'eks',
+                    label: 'Kubernetes',
+                    status: 'coming_soon' as const,
+                    count: undefined,
+                    icon: Cpu,
+                    route: undefined,
+                    meta: 'not wired yet',
+                },
+                {
+                    id: 'database',
+                    label: 'Database',
+                    status: 'coming_soon' as const,
+                    count: undefined,
+                    icon: Table2,
+                    route: undefined,
+                    meta: 'not wired yet',
+                },
+            ]
+
         return [
             {
                 id: 'storage',
@@ -51,25 +106,47 @@ export function CloudConsoleHomePage() {
                 count: storageResourcesQuery.data?.length,
                 icon: Database,
                 route: `/cloud-explorer/${cloud}/storage`,
+                meta: storageMetaLabel(statusQuery.data, storageResourcesQuery.isLoading),
             },
+            ...awsServiceCards,
             ...SERVICE_PLACEHOLDERS.map((service) => ({
                 ...service,
                 status: 'coming_soon' as const,
                 count: undefined,
                 route: undefined,
+                meta: 'not wired yet',
             })),
         ]
-    }, [cloud, servicesQuery.data, storageResourcesQuery.data])
+    }, [
+        cloud,
+        eksResourcesQuery.data,
+        eksResourcesQuery.isLoading,
+        rdsResourcesQuery.data,
+        rdsResourcesQuery.isLoading,
+        servicesQuery.data,
+        statusQuery.data,
+        storageResourcesQuery.data,
+        storageResourcesQuery.isLoading,
+    ])
 
     if (!routeCloud) return <Navigate to="/console/aws" replace/>
 
     const status = statusQuery.data
     const runtimeLabel = status?.endpoint ?? (cloud === 'aws' ? 'http://localhost:4566' : cloud === 'azure' ? 'http://localhost:4577' : 'Future Floci-GP')
     const activeServices = serviceCards.filter((service) => service.status === 'available').length
-    const resourceCount = storageResourcesQuery.data?.length ?? 0
+    const resourceCount =
+        (storageResourcesQuery.data?.length ?? 0)
+        + (eksResourcesQuery.data?.length ?? 0)
+        + (rdsResourcesQuery.data?.length ?? 0)
     const runtimeState = runtimeLabelFor(status, statusQuery.isLoading)
     const runtimeClass = runtimeClassFor(status, statusQuery.isLoading)
-    const resourceDetail = resourceDetailFor(status, statusQuery.isLoading, storageResourcesQuery.isLoading, storageResourcesQuery.isError)
+    const resourceDetail = resourceDetailFor(
+        cloud,
+        status,
+        statusQuery.isLoading,
+        storageResourcesQuery.isLoading || eksResourcesQuery.isLoading || rdsResourcesQuery.isLoading,
+        storageResourcesQuery.isError || eksResourcesQuery.isError || rdsResourcesQuery.isError,
+    )
 
     return (
         <>
@@ -111,7 +188,7 @@ export function CloudConsoleHomePage() {
                 <section className="console-summary">
                     <SummaryTile label="Cloud" value={cloud.toUpperCase()} detail={runtimeLabel} icon={Cloud}/>
                     <SummaryTile label="Runtime" value={runtimeState} detail={status?.error ?? runtimeDetailFor(cloud, status)} icon={Radio} state={runtimeClass}/>
-                    <SummaryTile label="Active services" value={`${activeServices}`} detail="Storage only for this first multi-cloud pass"/>
+                    <SummaryTile label="Active services" value={`${activeServices}`} detail={activeServicesDetailFor(cloud)}/>
                     <SummaryTile label="Resources" value={`${resourceCount}`} detail={resourceDetail}/>
                 </section>
 
@@ -140,7 +217,7 @@ export function CloudConsoleHomePage() {
                                 </div>
                                 <div className="console-service-meta">
                                     <strong>{service.count ?? '-'}</strong>
-                                    <span>{service.id === 'storage' ? storageMetaLabel(status, storageResourcesQuery.isLoading) : 'not wired yet'}</span>
+                                    <span>{service.meta}</span>
                                 </div>
                             </>
                         )
@@ -203,12 +280,24 @@ function runtimeDetailFor(cloud: CloudProvider, status?: CloudStatus): string {
     return 'Waiting for runtime status'
 }
 
-function resourceDetailFor(status: CloudStatus | undefined, statusLoading: boolean, resourcesLoading: boolean, resourcesError: boolean): string {
+function activeServicesDetailFor(cloud: CloudProvider): string {
+    if (cloud === 'aws') return 'Storage, EKS, and RDS are wired'
+    return 'Storage only for this multi-cloud pass'
+}
+
+function resourceDetailFor(
+    cloud: CloudProvider,
+    status: CloudStatus | undefined,
+    statusLoading: boolean,
+    resourcesLoading: boolean,
+    resourcesError: boolean,
+): string {
     if (statusLoading) return 'Waiting for runtime status'
     if (status?.runtime === 'unavailable') return 'Blocked until runtime is reachable'
     if (status?.runtime === 'coming_soon') return 'No adapter registered yet'
     if (resourcesLoading) return 'Loading normalized storage resources'
     if (resourcesError) return 'Resource load failed'
+    if (cloud === 'aws') return 'Storage, EKS, and RDS resources'
     return 'Normalized storage resources'
 }
 
@@ -217,6 +306,12 @@ function storageMetaLabel(status: CloudStatus | undefined, loading: boolean): st
     if (status?.runtime === 'coming_soon') return 'coming soon'
     if (loading) return 'loading resources'
     return 'resources'
+}
+
+function awsMetaLabel(status: CloudStatus | undefined, loading: boolean, label: string): string {
+    if (status?.runtime === 'unavailable') return 'runtime unavailable'
+    if (loading) return `loading ${label}`
+    return label
 }
 
 function cloudName(cloud: CloudProvider): string {

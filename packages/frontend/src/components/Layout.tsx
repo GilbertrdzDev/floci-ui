@@ -5,6 +5,7 @@ import {
     Cpu,
     Database,
     KeyRound,
+    Boxes,
     LayoutDashboard,
     Lock,
     MessageSquare,
@@ -34,6 +35,7 @@ const ICONS: Record<ServiceName | 'dashboard', React.ElementType> = {
     dynamodb: Table2,
     sns: Bell,
     lambda: Zap,
+    eks: Boxes,
     secretsmanager: KeyRound,
     cognito: Users,
     rds: Database,
@@ -103,8 +105,8 @@ export function Layout() {
     const activeCloud = activeCloudFromPath(location.pathname)
     const {theme, toggle} = useTheme()
     const {data, isError} = useQuery({
-        queryKey: ['health'],
-        queryFn: ({signal}) => fetchHealth(signal),
+        queryKey: ['health', activeCloud],
+        queryFn: ({signal}) => fetchHealth(signal, activeCloud),
         refetchInterval: 5000
     })
     const status = isError ? 'unavailable' : data?.status ?? 'unknown'
