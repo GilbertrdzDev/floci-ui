@@ -1,5 +1,5 @@
 import {useEffect, useRef, useState} from 'react'
-import {ChevronLeft, ChevronRight, Copy, Download, File, Folder, Loader2, RefreshCw, Trash2, Upload} from 'lucide-react'
+import {ChevronLeft, ChevronRight, Copy, Download, File, Folder, Loader2, RefreshCw, Search, Trash2, Upload, X} from 'lucide-react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {
     copyStorageObject,
@@ -33,6 +33,9 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
     const [createFolderOpen, setCreateFolderOpen] = useState(false)
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
     const [copyObject, setCopyObject] = useState<StorageObject | null>(null)
+    const [search, setSearch] = useState('')
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+    const [bulkDeleting, setBulkDeleting] = useState(false)
 
     const resolvedCapabilities = withRuntimeState(normalizeCapabilities(capabilities), runtimeReachable)
     const uploadCapability = capabilityFor(resolvedCapabilities, 'upload')
@@ -53,6 +56,8 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
         setCreateFolderOpen(false)
         setDeleteConfirm(null)
         setCopyObject(null)
+        setSearch('')
+        setSelectedKeys(new Set())
         onSelectObject(undefined)
     }, [resource?.id, onSelectObject])
 
@@ -89,7 +94,10 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
             if (!resource) return
             await deleteStorageObject(cloud, resource.id, object.key)
         },
-        onSuccess: () => qc.invalidateQueries({queryKey: ['storage-objects', cloud, resource?.id]}),
+        onSuccess: (_, deleted) => {
+            if (selectedObjectKey === deleted.key) onSelectObject(undefined)
+            qc.invalidateQueries({queryKey: ['storage-objects', cloud, resource?.id]})
+        },
     })
 
     const moveCopyMut = useMutation({
@@ -108,6 +116,29 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
         },
     })
 
+    // ── Navigation helpers ──
+    function navigate(nextPrefix: string) {
+        setPrefix(nextPrefix)
+        setSearch('')
+        setSelectedKeys(new Set())
+        setDeleteConfirm(null)
+        onSelectObject(undefined)
+    }
+
+    // ── Bulk delete ──
+    async function handleBulkDelete() {
+        if (!resource || selectedKeys.size === 0) return
+        setBulkDeleting(true)
+        try {
+            await Promise.all([...selectedKeys].map((key) => deleteStorageObject(cloud, resource.id, key)))
+            if (selectedObjectKey && selectedKeys.has(selectedObjectKey)) onSelectObject(undefined)
+            setSelectedKeys(new Set())
+            void qc.invalidateQueries({queryKey: ['storage-objects', cloud, resource.id]})
+        } finally {
+            setBulkDeleting(false)
+        }
+    }
+
     if (!resource) {
         return (
             <section className="object-browser empty compact">
@@ -118,10 +149,23 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
     }
 
     const objects = query.data?.objects ?? []
-    const error = query.error ?? uploadMut.error ?? createFolderMut.error ?? deleteMut.error ?? moveCopyMut.error
-    const folders = objects.filter((object) => object.type === 'folder').length
-    const files = objects.length - folders
     const objectLabel = cloud === 'azure' ? 'blobs' : 'objects'
+
+    // ── Filtered data ──
+    const q = search.toLowerCase()
+    const filteredObjects = q
+        ? objects.filter((o) => o.name.toLowerCase().includes(q) || o.key.toLowerCase().includes(q))
+        : objects
+    const filteredFolders = filteredObjects.filter((o) => o.type === 'folder')
+    const filteredFiles = filteredObjects.filter((o) => o.type === 'object')
+    const totalFolders = objects.filter((o) => o.type === 'folder').length
+    const totalFiles = objects.filter((o) => o.type === 'object').length
+
+    // ── Bulk select state ──
+    const allSelected = filteredFiles.length > 0 && filteredFiles.every((f) => selectedKeys.has(f.key))
+    const someSelected = !allSelected && filteredFiles.some((f) => selectedKeys.has(f.key))
+
+    const error = query.error ?? uploadMut.error ?? createFolderMut.error ?? deleteMut.error ?? moveCopyMut.error
 
     return (
         <section className="object-browser">
@@ -138,24 +182,19 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
                 />
             )}
 
+            {/* ── Header ── */}
             <div className="object-browser-header">
                 <div>
                     <p className="eyebrow">Objects</p>
                     <h3>{resource.name}</h3>
                     <div className="object-browser-subtitle">
-                        <ObjectBreadcrumb prefix={prefix} onNavigate={(nextPrefix) => {
-                            setPrefix(nextPrefix)
-                            onSelectObject(undefined)
-                        }}/>
-                        <span>{folders} folders, {files} {objectLabel}</span>
+                        <ObjectBreadcrumb prefix={prefix} onNavigate={navigate}/>
+                        <span>{totalFolders} folders, {totalFiles} {objectLabel}</span>
                     </div>
                 </div>
                 <div className="object-browser-actions">
                     {prefix && (
-                        <button className="button" type="button" onClick={() => {
-                            setPrefix(parentPrefix(prefix))
-                            onSelectObject(undefined)
-                        }}>
+                        <button className="button" type="button" onClick={() => navigate(parentPrefix(prefix))}>
                             <ChevronLeft size={14}/>
                             Back
                         </button>
@@ -187,6 +226,7 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
                 </div>
             </div>
 
+            {/* ── Create folder ── */}
             {createFolderOpen && (
                 <form className="object-create-folder" onSubmit={(event) => {
                     event.preventDefault()
@@ -203,12 +243,37 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
                 </form>
             )}
 
+            {/* ── Error ── */}
             {error && (
                 <div className="inline-error">
                     {error instanceof Error ? error.message : 'Storage operation failed'}
                 </div>
             )}
 
+            {/* ── Search bar ── */}
+            {!query.isLoading && objects.length > 0 && (
+                <div className="object-search-bar">
+                    <Search size={13}/>
+                    <input
+                        className="input"
+                        value={search}
+                        onChange={(e) => { setSearch(e.target.value); setSelectedKeys(new Set()) }}
+                        placeholder={`Search ${objectLabel} and folders…`}
+                    />
+                    {search && (
+                        <button className="icon-btn" type="button" onClick={() => setSearch('')}>
+                            <X size={13}/>
+                        </button>
+                    )}
+                    {search && (
+                        <span style={{fontSize: 12, color: '#5f7080', whiteSpace: 'nowrap'}}>
+                            {filteredObjects.length} / {objects.length}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {/* ── Table ── */}
             {query.isLoading ? (
                 <div className="empty compact">
                     <h3>Loading objects</h3>
@@ -219,10 +284,27 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
                     <h3>No {objectLabel}</h3>
                     <p>{prefix ? `The ${prefix} prefix is empty.` : `This ${resource.type} has no ${objectLabel} yet.`}</p>
                 </div>
+            ) : filteredObjects.length === 0 ? (
+                <div className="empty compact">
+                    <h3>No results</h3>
+                    <p>Nothing matches &ldquo;{search}&rdquo;.</p>
+                </div>
             ) : (
                 <table className="table object-table">
                     <thead>
                         <tr>
+                            <th style={{width: 32, textAlign: 'center'}}>
+                                <input
+                                    type="checkbox"
+                                    ref={(el) => { if (el) el.indeterminate = someSelected }}
+                                    checked={allSelected}
+                                    title={allSelected ? 'Deselect all' : 'Select all files'}
+                                    onChange={() => {
+                                        if (allSelected) setSelectedKeys(new Set())
+                                        else setSelectedKeys(new Set(filteredFiles.map((f) => f.key)))
+                                    }}
+                                />
+                            </th>
                             <th>Name</th>
                             <th>Type</th>
                             <th>Size</th>
@@ -231,64 +313,119 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], runtim
                         </tr>
                     </thead>
                     <tbody>
-                        {objects.map((object) => (
-                            <tr key={object.key} className={selectedObjectKey === object.key ? 'selected' : ''}>
-                                <td onClick={() => {
-                                    if (object.type === 'folder') {
-                                        setPrefix(object.key)
-                                        onSelectObject(undefined)
-                                    } else {
-                                        onSelectObject(object)
-                                    }
-                                }}>
+                        {filteredFolders.map((object) => (
+                            <tr key={object.key}>
+                                <td/>
+                                <td onClick={() => navigate(object.key)} style={{cursor: 'pointer'}}>
                                     <span className="object-name">
-                                        {object.type === 'folder' ? <Folder size={14}/> : <File size={14}/>}
+                                        <Folder size={14}/>
                                         {object.name}
-                                        {object.type === 'folder' && <ChevronRight size={12}/>}
+                                        <ChevronRight size={12}/>
                                     </span>
                                 </td>
                                 <td>{object.type}</td>
-                                <td>{object.size === null ? '-' : formatBytes(object.size)}</td>
-                                <td>{object.lastModified ?? '-'}</td>
-                                <td className="table-actions">
-                                    {object.type === 'object' && (
-                                        <>
-                                            {downloadCapability && (
-                                                <a className={`icon-btn ${canDownload ? '' : 'disabled'}`} href={canDownload ? storageObjectDownloadUrl(cloud, resource.id, object.key) : undefined} title={downloadCapability.reason ?? `Download ${object.name}`}>
-                                                    <Download size={13}/>
-                                                </a>
-                                            )}
-                                            {copyCapability && (
-                                                <button className="icon-btn" disabled={!canCopy} title={copyCapability.reason ?? `Copy ${object.name}`} onClick={() => setCopyObject(object)}>
-                                                    <Copy size={13}/>
-                                                </button>
-                                            )}
-                                            {canDelete && deleteConfirm === object.key ? (
-                                                <button className="button danger compact" disabled={deleteMut.isPending} onClick={() => {
-                                                    deleteMut.mutate(object)
-                                                    setDeleteConfirm(null)
-                                                    onSelectObject(undefined)
-                                                }}>
-                                                    Confirm
-                                                </button>
-                                            ) : (
-                                                deleteCapability && <button className="icon-btn danger" disabled={!canDelete} title={deleteCapability.reason ?? `Delete ${object.name}`} onClick={() => setDeleteConfirm(object.key)}>
-                                                    <Trash2 size={13}/>
-                                                </button>
-                                            )}
-                                        </>
-                                    )}
-                                </td>
+                                <td>—</td>
+                                <td>{object.lastModified ?? '—'}</td>
+                                <td/>
                             </tr>
                         ))}
+                        {filteredFiles.map((object) => {
+                            const isSelected = selectedKeys.has(object.key)
+                            return (
+                                <tr
+                                    key={object.key}
+                                    className={[
+                                        selectedObjectKey === object.key ? 'selected' : '',
+                                        isSelected ? 'bulk-selected' : '',
+                                    ].filter(Boolean).join(' ')}
+                                >
+                                    <td style={{textAlign: 'center'}}>
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onClick={(e) => e.stopPropagation()}
+                                            onChange={(e) => {
+                                                const next = new Set(selectedKeys)
+                                                if (e.target.checked) next.add(object.key)
+                                                else next.delete(object.key)
+                                                setSelectedKeys(next)
+                                            }}
+                                        />
+                                    </td>
+                                    <td onClick={() => onSelectObject(object)} style={{cursor: 'pointer'}}>
+                                        <span className="object-name">
+                                            <File size={14}/>
+                                            {object.name}
+                                        </span>
+                                    </td>
+                                    <td>{object.type}</td>
+                                    <td>{object.size === null ? '—' : formatBytes(object.size)}</td>
+                                    <td>{object.lastModified ?? '—'}</td>
+                                    <td className="table-actions">
+                                        {downloadCapability && (
+                                            <a className={`icon-btn ${canDownload ? '' : 'disabled'}`} href={canDownload ? storageObjectDownloadUrl(cloud, resource.id, object.key) : undefined} title={downloadCapability.reason ?? `Download ${object.name}`}>
+                                                <Download size={13}/>
+                                            </a>
+                                        )}
+                                        {copyCapability && (
+                                            <button className="icon-btn" disabled={!canCopy} title={copyCapability.reason ?? `Move / Copy ${object.name}`} onClick={() => setCopyObject(object)}>
+                                                <Copy size={13}/>
+                                            </button>
+                                        )}
+                                        {canDelete && deleteConfirm === object.key ? (
+                                            <button className="button danger compact" disabled={deleteMut.isPending} onClick={() => {
+                                                deleteMut.mutate(object)
+                                                setDeleteConfirm(null)
+                                            }}>
+                                                Confirm
+                                            </button>
+                                        ) : (
+                                            deleteCapability && (
+                                                <button className="icon-btn danger" disabled={!canDelete} title={deleteCapability.reason ?? `Delete ${object.name}`} onClick={() => setDeleteConfirm(object.key)}>
+                                                    <Trash2 size={13}/>
+                                                </button>
+                                            )
+                                        )}
+                                    </td>
+                                </tr>
+                            )
+                        })}
                     </tbody>
                 </table>
+            )}
+
+            {/* ── Bulk action bar ── */}
+            {selectedKeys.size > 0 && (
+                <div className="bulk-bar">
+                    <span className="bulk-count">
+                        {selectedKeys.size} {objectLabel.replace(/s$/, '')}{selectedKeys.size !== 1 ? 's' : ''} selected
+                    </span>
+                    <span className="bulk-spacer"/>
+                    <button
+                        className="button"
+                        onClick={() => setSelectedKeys(new Set())}
+                        disabled={bulkDeleting}
+                    >
+                        Deselect all
+                    </button>
+                    {deleteCapability && (
+                        <button
+                            className="button danger"
+                            disabled={!canDelete || bulkDeleting}
+                            title={deleteCapability.reason}
+                            onClick={() => void handleBulkDelete()}
+                        >
+                            {bulkDeleting ? <Loader2 size={13}/> : <Trash2 size={13}/>}
+                            Delete {selectedKeys.size}
+                        </button>
+                    )}
+                </div>
             )}
         </section>
     )
 }
 
-// ─── Copy modal ───────────────────────────────────────────────────────────────
+// ─── Move / Copy modal ────────────────────────────────────────────────────────
 
 const NEW_RESOURCE_SENTINEL = '__new__'
 
@@ -347,21 +484,15 @@ function MoveOrCopyModal({
     return (
         <div className="copy-modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
             <div className="copy-modal">
-                {/* Mode toggle */}
                 <div className="drawer-tabs" style={{marginBottom: 14}}>
-                    <button className={`drawer-tab ${mode === 'move' ? 'active' : ''}`} onClick={() => setMode('move')}>
-                        Move
-                    </button>
-                    <button className={`drawer-tab ${mode === 'copy' ? 'active' : ''}`} onClick={() => setMode('copy')}>
-                        Copy
-                    </button>
+                    <button className={`drawer-tab ${mode === 'move' ? 'active' : ''}`} onClick={() => setMode('move')}>Move</button>
+                    <button className={`drawer-tab ${mode === 'copy' ? 'active' : ''}`} onClick={() => setMode('copy')}>Copy</button>
                 </div>
 
                 <div style={{fontSize: 12, color: '#8d9cad', marginBottom: 12}}>
                     Source: <span className="mono" style={{color: '#d1d1d1'}}>{resource.name}/{srcObject.key}</span>
                 </div>
 
-                {/* Destination resource */}
                 <div className="form-row">
                     <label>Destination {resourceLabel}</label>
                     {resourcesQuery.isLoading ? (
@@ -369,11 +500,7 @@ function MoveOrCopyModal({
                             <Loader2 size={13}/> Loading {resourceLabel}s…
                         </div>
                     ) : (
-                        <select
-                            className="input"
-                            value={destResourceId}
-                            onChange={(e) => setDestResourceId(e.target.value)}
-                        >
+                        <select className="input" value={destResourceId} onChange={(e) => setDestResourceId(e.target.value)}>
                             {resources.map((r) => (
                                 <option key={r.id} value={r.id}>
                                     {r.name}{r.id === resource.id ? ' (current)' : ''}
@@ -384,7 +511,6 @@ function MoveOrCopyModal({
                     )}
                 </div>
 
-                {/* Inline create new resource */}
                 {isCreatingNew && (
                     <div style={{display: 'flex', gap: 6, alignItems: 'center', marginTop: -6, marginBottom: 4}}>
                         <input
@@ -405,10 +531,11 @@ function MoveOrCopyModal({
                     </div>
                 )}
                 {createResourceMut.isError && (
-                    <p style={{fontSize: 12, color: '#f87171', margin: '0 0 6px'}}>{createResourceMut.error instanceof Error ? createResourceMut.error.message : 'Create failed'}</p>
+                    <p style={{fontSize: 12, color: '#f87171', margin: '0 0 6px'}}>
+                        {createResourceMut.error instanceof Error ? createResourceMut.error.message : 'Create failed'}
+                    </p>
                 )}
 
-                {/* Destination key */}
                 <div className="form-row">
                     <label>Destination key</label>
                     <input className="input" value={destKey} onChange={(e) => setDestKey(e.target.value)}/>
