@@ -115,6 +115,20 @@ export function createCloudRoutes(service: CloudProxyService = createCloudProxyS
         })
     })
 
+    app.post('/:cloud/services/:service/resources/:id/object/copy', async (c) => {
+        const cloud = c.req.param('cloud') as CloudProvider
+        const serviceType = c.req.param('service') as CloudServiceType
+        if (!isCloudProvider(cloud) || !isServiceType(serviceType)) return c.json({error: 'Unknown cloud or service'}, 404)
+
+        const {srcKey, destKey, destResourceId} = await c.req.json<{srcKey: string; destKey: string; destResourceId?: string}>()
+        if (!srcKey || !destKey) return c.json({error: 'srcKey and destKey are required'}, 400)
+
+        return withRuntime(c, async () => {
+            await service.copyObject(cloud, serviceType, c.req.param('id'), srcKey, destKey, destResourceId)
+            return c.json({ok: true})
+        })
+    })
+
     app.post('/:cloud/services/:service/resources', async (c) => {
         const cloud = c.req.param('cloud') as CloudProvider
         const serviceType = c.req.param('service') as CloudServiceType
@@ -146,15 +160,65 @@ function isCloudProvider(value: string): value is CloudProvider {
 }
 
 function isServiceType(value: string): value is CloudServiceType {
-    return value === 'storage' || value === 'k8s' || value === 'database'
+    return value === 'storage' || value === 'k8s' || value === 'database' || value === 'serverless'
+
 }
 
 async function withRuntime(c: Context, handler: () => Promise<Response>): Promise<Response> {
     try {
         return await handler()
     } catch (err) {
-        const message = err instanceof Error ? err.message : 'Runtime request failed'
-        return c.json({error: message}, 502)
+        const error = normalizeRuntimeError(err)
+        return c.json(error.body, error.status)
+    }
+}
+
+function normalizeRuntimeError(err: unknown): {
+    status: 400 | 404 | 501 | 502 | 503
+    body: {error: string; code: string; message: string; detail?: string}
+} {
+    const message = err instanceof Error ? err.message : 'Runtime request failed'
+
+    if (message.includes('Cannot reach')) {
+        return errorResponse(503, 'runtime_unavailable', 'Runtime unavailable', message)
+    }
+
+    if (message.includes('HTTP 501') || message.includes('NotImplemented')) {
+        return errorResponse(501, 'operation_not_implemented', 'Operation is not implemented by the selected runtime', message)
+    }
+
+    if (message.includes('not found') || message.includes('NotFound') || message.includes('NoSuchBucket') || message.includes('NoSuchKey')) {
+        return errorResponse(404, 'resource_not_found', 'Resource not found', message)
+    }
+
+    if (message.includes('is not supported') || message.includes('No adapter registered')) {
+        return errorResponse(501, 'operation_not_supported', 'Operation is not supported by this adapter', message)
+    }
+
+    if (message.includes('is required') || message.includes('Use a valid')) {
+        return errorResponse(400, 'invalid_request', message)
+    }
+
+    return errorResponse(502, 'runtime_error', 'Runtime request failed', message)
+}
+
+function errorResponse(
+    status: 400 | 404 | 501 | 502 | 503,
+    code: string,
+    message: string,
+    detail?: string,
+): {
+    status: 400 | 404 | 501 | 502 | 503
+    body: {error: string; code: string; message: string; detail?: string}
+} {
+    return {
+        status,
+        body: {
+            error: message,
+            code,
+            message,
+            ...(detail && detail !== message ? {detail} : {}),
+        },
     }
 }
 

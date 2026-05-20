@@ -41,7 +41,7 @@ export class HttpError extends Error {
     public readonly body: unknown,
     public readonly url: string,
   ) {
-    super(`HTTP ${status} - ${statusText} [${url}]`);
+    super(httpErrorMessage(status, statusText, body, url));
     this.name = "HttpError";
   }
 }
@@ -55,6 +55,32 @@ export class NetworkError extends Error {
     super(message);
     this.name = "NetworkError";
   }
+}
+
+function httpErrorMessage(
+  status: number,
+  statusText: string,
+  body: unknown,
+  url: string,
+): string {
+  const apiMessage = apiErrorMessage(body);
+  if (!apiMessage) return `HTTP ${status} - ${statusText} [${url}]`;
+
+  const code = apiErrorCode(body);
+  const suffix = code ? ` (${code})` : "";
+  return `${apiMessage}${suffix} [${url}]`;
+}
+
+function apiErrorMessage(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as { message?: unknown; error?: unknown }).message ?? (body as { error?: unknown }).error;
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
+function apiErrorCode(body: unknown): string | null {
+  if (!body || typeof body !== "object") return null;
+  const value = (body as { code?: unknown }).code;
+  return typeof value === "string" && value.trim() ? value : null;
 }
 
 export class TimeoutError extends Error {

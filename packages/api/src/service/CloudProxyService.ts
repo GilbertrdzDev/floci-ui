@@ -13,6 +13,7 @@ import type {
 } from '../cloud-spi/types'
 import {storageSchemaFor} from '../cloud-spi/storageSchema'
 import {CloudAdapterRegistry} from '../registry/CloudAdapterRegistry'
+import {serverlessSchemaFor} from '../cloud-spi/serverlessSchema'
 import {azureEndpoint} from '../azure'
 
 export class CloudProxyService {
@@ -27,13 +28,6 @@ export class CloudProxyService {
     }
 
     services(cloud: CloudProvider): CloudServiceDescriptor[] {
-        if (cloud === 'gcp') {
-            return [
-                {cloud, service: 'storage', displayName: 'Storage', availability: 'coming_soon'},
-                {cloud, service: 'k8s', displayName: 'k8s Engine', availability: 'coming_soon'},
-                {cloud, service: 'database', displayName: 'Database', availability: 'coming_soon'},
-            ]
-        }
 
         const services: CloudServiceDescriptor[] = [{
             cloud,
@@ -54,7 +48,12 @@ export class CloudProxyService {
             displayName: 'Database',
             availability: this.registry.get(cloud, 'database') ? 'available' : 'coming_soon',
         })
-
+        services.push({
+            cloud,
+            service: 'serverless',
+            displayName: 'Serverless',
+            availability: this.registry.get(cloud, 'serverless') ? 'available' : 'coming_soon',
+        })
         return services
     }
 
@@ -138,6 +137,12 @@ export class CloudProxyService {
         const adapter = this.requireAdapter(cloud, service)
         if (!adapter.deleteObject) throw new Error(`Object delete is not supported for ${cloud}/${service}`)
         await adapter.deleteObject(resourceId, key)
+    }
+
+    async copyObject(cloud: CloudProvider, service: CloudServiceType, srcResourceId: string, srcKey: string, destKey: string, destResourceId?: string): Promise<void> {
+        const adapter = this.requireAdapter(cloud, service)
+        if (!adapter.copyObject) throw new Error(`Object copy is not supported for ${cloud}/${service}`)
+        await adapter.copyObject(srcResourceId, srcKey, destKey, destResourceId)
     }
 
     private requireAdapter(cloud: CloudProvider, service: CloudServiceType) {

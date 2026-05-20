@@ -6,7 +6,7 @@ import {CloudAdapterRegistry} from '../registry/CloudAdapterRegistry'
 import {CloudProxyService} from '../service/CloudProxyService'
 import {createCloudRoutes} from './clouds'
 
-function mockAdapter(cloud: 'aws' | 'azure'): CloudServiceAdapter {
+function mockAdapter(cloud: 'aws' | 'azure', overrides: Partial<CloudServiceAdapter> = {}): CloudServiceAdapter {
     return {
         cloud,
         service: 'storage',
@@ -35,12 +35,13 @@ function mockAdapter(cloud: 'aws' | 'azure'): CloudServiceAdapter {
                 metadata: {},
             }],
         }),
+        ...overrides,
     }
 }
 
-function appWithRoutes() {
+function appWithRoutes(adapters: CloudServiceAdapter[] = [mockAdapter('aws'), mockAdapter('azure')]) {
     const app = new Hono()
-    const registry = new CloudAdapterRegistry([mockAdapter('aws'), mockAdapter('azure')])
+    const registry = new CloudAdapterRegistry(adapters)
     app.route('/api/clouds', createCloudRoutes(new CloudProxyService(registry)))
     return app
 }
@@ -99,5 +100,41 @@ describe('cloud schema routes', () => {
         expect(res.status).toBe(200)
         expect(body.objects).toHaveLength(1)
         expect(body.objects[0].name).toBe('object.txt')
+    })
+
+    test('normalizes runtime unavailable errors', async () => {
+        const app = appWithRoutes([
+            mockAdapter('aws', {
+                list: async () => {
+                    throw new Error('Cannot reach Floci-AZ at http://localhost:4577: connection refused')
+                },
+            }),
+        ])
+        const res = await app.request('/api/clouds/aws/services/storage/resources')
+        const body = await res.json()
+
+        expect(res.status).toBe(503)
+        expect(body.code).toBe('runtime_unavailable')
+        expect(body.message).toBe('Runtime unavailable')
+        expect(body.detail).toContain('connection refused')
+    })
+
+    test('normalizes not implemented runtime errors', async () => {
+        const app = appWithRoutes([
+            mockAdapter('azure', {
+                create: async () => {
+                    throw new Error('Azure Blob request failed: HTTP 501')
+                },
+            }),
+        ])
+        const res = await app.request('/api/clouds/azure/services/storage/resources', {
+            method: 'POST',
+            body: JSON.stringify({containerName: 'demo'}),
+        })
+        const body = await res.json()
+
+        expect(res.status).toBe(501)
+        expect(body.code).toBe('operation_not_implemented')
+        expect(body.message).toBe('Operation is not implemented by the selected runtime')
     })
 })

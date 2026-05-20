@@ -11,6 +11,7 @@ import {DynamicFormRenderer} from '@/components/DynamicFormRenderer'
 import {ResourceInspector} from '@/components/ResourceInspector'
 import {ResourceTable} from '@/components/ResourceTable'
 import {StorageObjectBrowser} from '@/components/StorageObjectBrowser'
+import {capabilityEnabled, capabilityFor, capabilitySummary, normalizeCapabilities, withRuntimeState} from '@/lib/capabilities'
 import type {CloudProvider, CloudServiceType, CloudStatus} from '@/types/cloud'
 import type {CloudResource, StorageObject} from '@/types/resource'
 import type {ServiceSchema} from '@/types/schema'
@@ -59,6 +60,13 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
     })
 
     useEffect(() => {
+        setSelected(undefined)
+        setSelectedObject(undefined)
+        setCreateOpen(false)
+        setSearch('')
+    }, [cloud, service])
+
+    useEffect(() => {
         setSelectedObject(undefined)
     }, [selected?.id])
 
@@ -93,6 +101,13 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
     const schema = schemaQuery.data
     const resources = resourcesQuery.data ?? []
     const canCreate = schema.actions.includes('create')
+    const activeSelected = selected?.cloud === cloud && selected.service === service ? selected : undefined
+    const runtimeReachable = cloudStatus?.runtime === 'reachable'
+    const resourceCapabilities = withRuntimeState(normalizeCapabilities(schema.capabilities?.resourceActions), runtimeReachable)
+    const objectCapabilities = withRuntimeState(normalizeCapabilities(schema.capabilities?.objectActions), runtimeReachable)
+    const capabilityState = capabilitySummary([...resourceCapabilities, ...objectCapabilities])
+    const createCapability = capabilityFor(resourceCapabilities, 'create')
+    const createResourceLabel = resourceCreateLabel(schema)
     const runtimeState = statusLoading
         ? 'Checking runtime'
         : cloudStatus?.runtime === 'reachable'
@@ -103,7 +118,14 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
     const runtimeClass = cloudStatus?.runtime === 'unavailable' ? 'unavailable' : cloudStatus?.runtime === 'reachable' ? 'ready' : 'pending'
     const adapterState = cloudStatus?.adapterRegistered ? 'Adapter ready' : 'Adapter pending'
     const resourceState = resourceStateFor(cloudStatus, statusLoading, resourcesQuery.isLoading, resourcesQuery.isError)
-    const canUseRuntime = cloudStatus?.runtime === 'reachable'
+    const canUseRuntime = runtimeReachable
+    const canCreateResource = canUseRuntime && capabilityEnabled(createCapability)
+    const capabilitiesLabel = capabilityState.blocked > 0
+        ? `${capabilityState.blocked} blocked`
+        : capabilityState.partial > 0
+            ? `${capabilityState.partial} partial`
+            : 'Capabilities verified'
+    const capabilitiesClass = capabilityState.blocked > 0 ? 'unavailable' : capabilityState.partial > 0 ? 'pending' : 'ready'
 
     return (
         <div className="dynamic-resource-view">
@@ -116,6 +138,7 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                     <div className="schema-action-list">
                         <span className={`runtime-state ${runtimeClass}`}>{runtimeState}</span>
                         <span className={`runtime-state ${cloudStatus?.adapterRegistered ? 'ready' : 'pending'}`}>{adapterState}</span>
+                        <span className={`runtime-state ${capabilitiesClass}`}>{capabilitiesLabel}</span>
                         <span className={`runtime-state ${resourceState.className}`}>{resourceState.label}</span>
                         <span className="schema-action resource-count">{resources.length} resources</span>
                     </div>
@@ -124,9 +147,10 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                 <div className="dynamic-stage-grid">
                     <FeatureTile icon={Filter} title="Dynamic Filters" value={`${schema.filters.length}`} detail="Schema-driven search and future filters"/>
                     <FeatureTile icon={Table2} title="Resources Table" value={`${schema.columns.length} columns`} detail="Normalized across AWS and Azure"/>
-                    <FeatureTile icon={Workflow} title="Dynamic Actions" value={schema.actions.join(', ')} detail="Rendered from adapter capabilities"/>
+                    <FeatureTile icon={Workflow} title="Dynamic Actions" value={`${capabilityState.ready}/${capabilityState.total} ready`} detail={capabilityDetail([...resourceCapabilities, ...objectCapabilities])}/>
                     <FeatureTile icon={Eye} title="Resource Inspector" value="Enabled" detail="Same normalized resource contract"/>
                 </div>
+                <CapabilityStrip capabilities={[...resourceCapabilities, ...objectCapabilities]}/>
             </section>
 
             <div className="resource-workbench">
@@ -139,13 +163,11 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                             </div>
                             <div className="resource-table-tools">
                                 <input className="input" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter resources"/>
-                                {canCreate && (
-                                    <button className="button" type="button" disabled={!canUseRuntime} onClick={() => setCreateOpen((open) => !open)}>
-                                        <Plus size={14}/>
-                                        Create
-                                        {createOpen ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
-                                    </button>
-                                )}
+                                <button className="button" type="button" disabled={!canCreateResource} title={createCapability?.reason} onClick={() => setCreateOpen((open) => !open)}>
+                                    <Plus size={14}/>
+                                    {createResourceLabel}
+                                    {createOpen ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+                                </button>
                                 <button className="button" type="button" disabled={!canUseRuntime || resourcesQuery.isFetching} onClick={() => resourcesQuery.refetch()}>
                                     <RefreshCw size={14}/>
                                     {resourcesQuery.isFetching ? 'Loading' : 'Refresh'}
@@ -157,6 +179,8 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                                 <DynamicFormRenderer
                                     schema={schema}
                                     isSubmitting={createMut.isPending}
+                                    submitLabel={createResourceLabel}
+                                    pendingLabel="Creating"
                                     submitError={createMut.error instanceof Error ? createMut.error.message : null}
                                     onSubmit={(values) => createMut.mutate(values)}
                                 />
@@ -165,7 +189,7 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                         {renderResourceSurface({
                             schema,
                             resources,
-                            selectedId: selected?.id,
+                            selectedId: activeSelected?.id,
                             deletingId: deleteMut.variables?.id,
                             cloudStatus,
                             statusLoading,
@@ -176,13 +200,36 @@ export function DynamicResourceView({cloud, service, cloudStatus, statusLoading 
                         })}
                     </section>
                 </section>
-                <ResourceInspector resource={selected} object={selectedObject}/>
+                <ResourceInspector resource={activeSelected} object={selectedObject}/>
             </div>
             {service === 'storage' && (
                 <StorageObjectBrowser cloud={cloud} resource={selected} selectedObjectKey={selectedObject?.key} onSelectObject={setSelectedObject}/>
             )}
         </div>
     )
+}
+
+function capabilityDetail(capabilities: ReturnType<typeof normalizeCapabilities>): string {
+    const active = capabilities.filter(capabilityEnabled).map((capability) => capability.label)
+    return active.length ? active.join(', ') : 'No runtime actions available'
+}
+
+function CapabilityStrip({capabilities}: {capabilities: ReturnType<typeof normalizeCapabilities>}) {
+    return (
+        <div className="capability-strip">
+            {capabilities.map((capability) => (
+                <span key={capability.name} className={`capability-pill ${capability.status}`} title={capability.reason}>
+                    {capability.label}
+                </span>
+            ))}
+        </div>
+    )
+}
+
+function resourceCreateLabel(schema: ServiceSchema): string {
+    if (schema.cloud === 'aws' && schema.service === 'storage') return 'Create bucket'
+    if (schema.cloud === 'azure' && schema.service === 'storage') return 'Create container'
+    return 'Create resource'
 }
 
 function FeatureTile({icon, title, value, detail}: {icon: ElementType; title: string; value: string; detail: string}) {
