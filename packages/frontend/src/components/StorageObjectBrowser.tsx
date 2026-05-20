@@ -2,18 +2,21 @@ import {useEffect, useRef, useState} from 'react'
 import {ChevronLeft, ChevronRight, Download, File, Folder, RefreshCw, Trash2, Upload} from 'lucide-react'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 import {deleteStorageObject, listStorageObjects, storageObjectDownloadUrl, uploadStorageObject} from '@/api/cloudProxyClient'
+import {capabilityEnabled, capabilityFor, normalizeCapabilities, withRuntimeState} from '@/lib/capabilities'
 import type {CloudProvider} from '@/types/cloud'
 import type {CloudResource, StorageObject} from '@/types/resource'
+import type {CapabilitySchema, ObjectActionName} from '@/types/schema'
 
 interface StorageObjectBrowserProps {
     cloud: CloudProvider
     resource?: CloudResource
-    capabilities?: Array<'list' | 'upload' | 'download' | 'delete' | 'createFolder'>
+    capabilities?: Array<CapabilitySchema<ObjectActionName> | ObjectActionName>
+    runtimeReachable?: boolean
     selectedObjectKey?: string
     onSelectObject: (object?: StorageObject) => void
 }
 
-export function StorageObjectBrowser({cloud, resource, capabilities = [], selectedObjectKey, onSelectObject}: StorageObjectBrowserProps) {
+export function StorageObjectBrowser({cloud, resource, capabilities = [], runtimeReachable = false, selectedObjectKey, onSelectObject}: StorageObjectBrowserProps) {
     const qc = useQueryClient()
     const fileRef = useRef<HTMLInputElement | null>(null)
     const [prefix, setPrefix] = useState('')
@@ -21,10 +24,15 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], select
     const [folderName, setFolderName] = useState('')
     const [createFolderOpen, setCreateFolderOpen] = useState(false)
     const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
-    const canUpload = capabilities.includes('upload')
-    const canDownload = capabilities.includes('download')
-    const canDelete = capabilities.includes('delete')
-    const canCreateFolder = capabilities.includes('createFolder')
+    const resolvedCapabilities = withRuntimeState(normalizeCapabilities(capabilities), runtimeReachable)
+    const uploadCapability = capabilityFor(resolvedCapabilities, 'upload')
+    const downloadCapability = capabilityFor(resolvedCapabilities, 'download')
+    const deleteCapability = capabilityFor(resolvedCapabilities, 'delete')
+    const createFolderCapability = capabilityFor(resolvedCapabilities, 'createFolder')
+    const canUpload = capabilityEnabled(uploadCapability)
+    const canDownload = capabilityEnabled(downloadCapability)
+    const canDelete = capabilityEnabled(deleteCapability)
+    const canCreateFolder = capabilityEnabled(createFolderCapability)
 
     useEffect(() => {
         setPrefix('')
@@ -110,13 +118,13 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], select
                             Back
                         </button>
                     )}
-                    {canCreateFolder && (
-                        <button className="button" type="button" onClick={() => setCreateFolderOpen((open) => !open)}>
+                    {createFolderCapability && (
+                        <button className="button" type="button" disabled={!canCreateFolder} title={createFolderCapability.reason} onClick={() => setCreateFolderOpen((open) => !open)}>
                             <Folder size={14}/>
                             New folder
                         </button>
                     )}
-                    {canUpload && (
+                    {uploadCapability && (
                         <>
                             <input className="input object-prefix-input" value={uploadPrefix} onChange={(event) => setUploadPrefix(normalizePrefix(event.target.value))} placeholder={prefix ? `Upload to ${prefix}` : 'Upload prefix'}/>
                             <input ref={fileRef} type="file" hidden onChange={(event) => {
@@ -124,7 +132,7 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], select
                                 if (file) uploadMut.mutate(file)
                                 event.currentTarget.value = ''
                             }}/>
-                            <button className="button" type="button" onClick={() => fileRef.current?.click()}>
+                            <button className="button" type="button" disabled={!canUpload} title={uploadCapability.reason} onClick={() => fileRef.current?.click()}>
                                 <Upload size={14}/>
                                 {uploadMut.isPending ? 'Uploading' : 'Upload'}
                             </button>
@@ -203,8 +211,8 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], select
                                 <td className="table-actions">
                                     {object.type === 'object' && (
                                         <>
-                                            {canDownload && (
-                                                <a className="icon-btn" href={storageObjectDownloadUrl(cloud, resource.id, object.key)} title={`Download ${object.name}`}>
+                                            {downloadCapability && (
+                                                <a className={`icon-btn ${canDownload ? '' : 'disabled'}`} href={canDownload ? storageObjectDownloadUrl(cloud, resource.id, object.key) : undefined} title={downloadCapability.reason ?? `Download ${object.name}`}>
                                                     <Download size={13}/>
                                                 </a>
                                             )}
@@ -217,7 +225,7 @@ export function StorageObjectBrowser({cloud, resource, capabilities = [], select
                                                     Confirm
                                                 </button>
                                             ) : (
-                                                canDelete && <button className="icon-btn danger" title={`Delete ${object.name}`} onClick={() => setDeleteConfirm(object.key)}>
+                                                deleteCapability && <button className="icon-btn danger" disabled={!canDelete} title={deleteCapability.reason ?? `Delete ${object.name}`} onClick={() => setDeleteConfirm(object.key)}>
                                                     <Trash2 size={13}/>
                                                 </button>
                                             )}

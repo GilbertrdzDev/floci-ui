@@ -51,6 +51,7 @@ describe('AzureStorageAdapter', () => {
                     <Blob>
                         <Name>background.png</Name>
                         <Properties>
+                            <Last-Modified>Wed, 20 May 2026 04:18:00 GMT</Last-Modified>
                             <Content-Length>120</Content-Length>
                         </Properties>
                     </Blob>
@@ -67,7 +68,7 @@ describe('AzureStorageAdapter', () => {
                     name: 'test',
                     type: 'folder',
                     size: null,
-                    lastModified: null,
+                    lastModified: 'Wed, 20 May 2026 04:16:27 GMT',
                     metadata: {
                         provider: 'azure',
                         storageService: 'blob',
@@ -79,8 +80,8 @@ describe('AzureStorageAdapter', () => {
                     key: 'background.png',
                     name: 'background.png',
                     type: 'object',
-                    size: null,
-                    lastModified: null,
+                    size: 120,
+                    lastModified: 'Wed, 20 May 2026 04:18:00 GMT',
                     metadata: {
                         provider: 'azure',
                         storageService: 'blob',

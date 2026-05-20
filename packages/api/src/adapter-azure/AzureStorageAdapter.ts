@@ -121,8 +121,11 @@ function parseBlobs(xml: string, prefix: string) {
     })
 
     const blobs: StorageObject[] = []
-    for (const match of xml.matchAll(/<Blob>\s*<Name>([^<]+)<\/Name>[\s\S]*?(?:<Last-Modified>([^<]+)<\/Last-Modified>)?[\s\S]*?(?:<Content-Length>([^<]+)<\/Content-Length>)?[\s\S]*?<\/Blob>/g)) {
+    for (const match of xml.matchAll(/<Blob>\s*<Name>([^<]+)<\/Name>[\s\S]*?<\/Blob>/g)) {
         const key = decodeXml(match[1])
+        const blobXml = match[0]
+        const lastModified = xmlValue(blobXml, 'Last-Modified') ?? null
+        const contentLength = numberHeader(xmlValue(blobXml, 'Content-Length') ?? null)
         const markerFolderKey = markerFolderPrefix(key)
         if (markerFolderKey) {
             if (!folderKeys.has(markerFolderKey)) {
@@ -132,7 +135,7 @@ function parseBlobs(xml: string, prefix: string) {
                     name: objectName(markerFolderKey, prefix),
                     type: 'folder' as const,
                     size: null,
-                    lastModified: match[2] ? decodeXml(match[2]) : null,
+                    lastModified,
                     metadata: {
                         provider: 'azure',
                         storageService: 'blob',
@@ -144,13 +147,12 @@ function parseBlobs(xml: string, prefix: string) {
             continue
         }
 
-        const blobXml = match[0]
         blobs.push({
             key,
             name: objectName(key, prefix),
             type: 'object' as const,
-            size: match[3] ? Number(match[3]) : null,
-            lastModified: match[2] ? decodeXml(match[2]) : null,
+            size: contentLength,
+            lastModified,
             metadata: {
                 provider: 'azure',
                 storageService: 'blob',

@@ -1,4 +1,4 @@
-import type {CloudProvider, FieldSchema, ServiceSchema, TableColumnSchema} from './types'
+import type {CapabilitySchema, CloudProvider, FieldSchema, ObjectActionName, ResourceActionName, ServiceSchema, TableColumnSchema} from './types'
 
 const storageColumns: TableColumnSchema[] = [
     {name: 'name', label: 'Name'},
@@ -10,6 +10,28 @@ const storageColumns: TableColumnSchema[] = [
 
 const storageFilters: FieldSchema[] = [
     {name: 'search', label: 'Search', type: 'text', required: false},
+]
+
+const storageResourceActions: CapabilitySchema<ResourceActionName>[] = [
+    {name: 'list', label: 'List resources', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'create', label: 'Create resource', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'delete', label: 'Delete resource', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'inspect', label: 'Inspect resource', enabled: true, status: 'available', runtimeRequired: false},
+]
+
+const storageObjectActions: CapabilitySchema<ObjectActionName>[] = [
+    {name: 'list', label: 'List objects', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'upload', label: 'Upload object', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'download', label: 'Download object', enabled: true, status: 'available', runtimeRequired: true},
+    {name: 'delete', label: 'Delete object', enabled: true, status: 'available', runtimeRequired: true},
+    {
+        name: 'createFolder',
+        label: 'Create folder',
+        enabled: true,
+        status: 'partial',
+        reason: 'Folders are represented as object/blob prefixes, not filesystem directories.',
+        runtimeRequired: true,
+    },
 ]
 
 export function awsStorageSchema(): ServiceSchema {
@@ -44,8 +66,8 @@ export function awsStorageSchema(): ServiceSchema {
         ],
         actions: ['list', 'create', 'delete', 'inspect'],
         capabilities: {
-            resourceActions: ['list', 'create', 'delete', 'inspect'],
-            objectActions: ['list', 'upload', 'download', 'delete', 'createFolder'],
+            resourceActions: storageResourceActions,
+            objectActions: storageObjectActions,
         },
         filters: storageFilters,
         columns: storageColumns,
@@ -74,8 +96,8 @@ export function azureStorageSchema(): ServiceSchema {
         ],
         actions: ['list', 'create', 'delete', 'inspect'],
         capabilities: {
-            resourceActions: ['list', 'create', 'delete', 'inspect'],
-            objectActions: ['list', 'upload', 'download', 'delete', 'createFolder'],
+            resourceActions: storageResourceActions,
+            objectActions: storageObjectActions,
         },
         filters: storageFilters,
         columns: storageColumns,

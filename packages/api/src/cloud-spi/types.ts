@@ -44,6 +44,18 @@ export interface FieldSchema {
 }
 
 export type ActionSchema = 'list' | 'create' | 'delete' | 'inspect'
+export type ResourceActionName = 'list' | 'create' | 'delete' | 'inspect'
+export type ObjectActionName = 'list' | 'upload' | 'download' | 'delete' | 'createFolder'
+export type CapabilityStatus = 'available' | 'blocked' | 'partial' | 'coming_soon'
+
+export interface CapabilitySchema<TAction extends string> {
+    name: TAction
+    label: string
+    enabled: boolean
+    status: CapabilityStatus
+    reason?: string
+    runtimeRequired?: boolean
+}
 
 export interface TableColumnSchema {
     name: string
@@ -57,8 +69,8 @@ export interface ServiceSchema {
     fields: FieldSchema[]
     actions: ActionSchema[]
     capabilities?: {
-        resourceActions?: Array<'list' | 'create' | 'delete' | 'inspect'>
-        objectActions?: Array<'list' | 'upload' | 'download' | 'delete' | 'createFolder'>
+        resourceActions?: CapabilitySchema<ResourceActionName>[]
+        objectActions?: CapabilitySchema<ObjectActionName>[]
     }
     filters: FieldSchema[]
     columns: TableColumnSchema[]
