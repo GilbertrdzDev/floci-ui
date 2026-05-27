@@ -10,7 +10,9 @@ import {
     Lock,
     MessageSquare,
     Moon,
+    Network,
     Search,
+    Server,
     Shield,
     SlidersHorizontal,
     Timer,
@@ -61,6 +63,8 @@ const CLOUD_SERVICE_ICONS = {
     queue: MessageSquare,
     function: Zap,
     database: Table2,
+    compute: Server,
+    networking: Network,
 } satisfies Record<string, React.ElementType>
 
 type CloudSidebarService = keyof typeof CLOUD_SERVICE_ICONS
@@ -69,6 +73,8 @@ const CLOUD_SERVICE_ITEMS: Array<{name: CloudSidebarService; label: string; rout
     {name: 'storage', label: 'Storage', route: 'storage'},
     {name: 'k8s', label: 'k8s Engine', route: 'k8s'},
     {name: 'database', label: 'Database', route: 'database'},
+    {name: 'compute', label: 'Compute', route: 'compute'},
+    {name: 'networking', label: 'Networking', route: 'networking'},
     {name: 'queue', label: 'Queue'},
     {name: 'function', label: 'Function'},
 ]
@@ -83,7 +89,7 @@ function CloudServiceNav() {
             <span className="nav-label">Cloud Services · {cloudLabel}</span>
             {CLOUD_SERVICE_ITEMS.map((service) => {
                 const Icon = CLOUD_SERVICE_ICONS[service.name]
-                const available = service.name === 'storage' || ((service.name === 'k8s' || service.name === 'database') && cloud === 'aws')
+                const available = service.name === 'storage' || ((service.name === 'k8s' || service.name === 'database' || service.name === 'compute' || service.name === 'networking') && cloud === 'aws')
                 if (service.route && available) {
                     return <NavItem key={service.name} to={`/cloud-explorer/${cloud}/${service.route}`} icon={Icon} label={service.label}/>
                 }
