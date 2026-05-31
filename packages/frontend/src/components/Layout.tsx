@@ -15,7 +15,6 @@ import {
     Server,
     Shield,
     SlidersHorizontal,
-    Timer,
     Sun,
     Table2,
     Users,
@@ -102,12 +101,6 @@ function CloudServiceNav() {
                     </div>
                 )
             })}
-            {cloud === 'gcp' && (
-                <div className="nav-hint">
-                    <Timer size={13}/>
-                    <span>GCP adapter coming soon</span>
-                </div>
-            )}
         </div>
     )
 }
