@@ -83,7 +83,7 @@ export interface CloudResource {
     name: string
     cloud: Extract<CloudProvider, 'aws' | 'azure'>
     service: CloudServiceType
-    type: 'bucket' | 'container' | 'cluster' | 'db-instance' | 'instance' | 'image' | 'vpc'
+    type: 'bucket' | 'container' | 'cluster' | 'db-instance' | 'instance' | 'image' | 'vpc' | 'lambda'
     region: string | null
     createdAt: string | null
     status?: string | null
