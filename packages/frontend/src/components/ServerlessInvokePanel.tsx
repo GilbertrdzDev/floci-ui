@@ -21,30 +21,31 @@ export function ServerlessInvokePanel({
   const [invokeResult, setInvokeResult] = useState<ServerlessInvokeResult | null>(null);
   const [showLog, setShowLog] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   useEffect(() => {
     setPayload("{\n  \n}");
     setInvokeResult(null);
     setShowLog(false);
     setCopied(false);
+    setValidationError(null);
   }, [resource?.id]);
 
   const isSupportedResource =
-  resource?.service === "serverless" &&
-  (
-    resource.type === "lambda" ||
-    resource.type === "azure-function" ||
-    resource.type === "gcp-function"
-  );
+    resource?.service === "serverless" &&
+    (resource.type === "lambda" ||
+      resource.type === "azure-function" ||
+      resource.type === "gcp-function");
 
   const canInvoke = Boolean(resource && isSupportedResource && runtimeReachable);
+  const canSubmit = canInvoke && !validationError;
 
   const providerLabel =
-  cloud === "aws"
-    ? "Lambda function"
-    : cloud === "azure"
-      ? "Azure Function"
-      : "Google Cloud Function";
+    cloud === "aws"
+      ? "Lambda function"
+      : cloud === "azure"
+        ? "Azure Function"
+        : "Google Cloud Function";
 
   const invokeMutation = useMutation({
     mutationFn: () =>
@@ -72,7 +73,10 @@ export function ServerlessInvokePanel({
       <section className="table-panel">
         <div className="empty compact">
           <h3>Select a serverless function</h3>
-          <p>Select a Lambda function, Azure Function, or Google Cloud Function to invoke it from Cloud Explorer.</p>
+          <p>
+            Select a Lambda function, Azure Function, or Google Cloud Function to
+            invoke it from Cloud Explorer.
+          </p>
         </div>
       </section>
     );
@@ -102,17 +106,33 @@ export function ServerlessInvokePanel({
           <textarea
             className="json-editor"
             value={payload}
-            onChange={(event) => setPayload(event.target.value)}
+            onChange={(event) => {
+              const value = event.target.value;
+              setPayload(value);
+
+              try {
+                JSON.parse(value);
+                setValidationError(null);
+              } catch {
+                setValidationError("Payload must be valid JSON.");
+              }
+            }}
             spellCheck={false}
             placeholder="{}"
             style={{minHeight: 140}}
           />
         </label>
 
+        {validationError && (
+          <p className="error-text compact-text">
+            {validationError}
+          </p>
+        )}
+
         <button
           className="button primary"
           type="button"
-          disabled={!canInvoke || invokeMutation.isPending}
+          disabled={!canSubmit || invokeMutation.isPending}
           onClick={() => invokeMutation.mutate()}
         >
           {invokeMutation.isPending ? <Loader2 size={13} /> : <Play size={13} />}
