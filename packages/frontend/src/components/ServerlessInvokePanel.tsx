@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {ChevronDown, ChevronUp, Copy, Loader2, Play, Zap} from "lucide-react";
+import {ChevronDown, ChevronUp, Copy, Loader2, Play, Wand2, Zap} from "lucide-react";
 import {useMutation} from "@tanstack/react-query";
 import {invokeCloudResource} from "@/api/cloudProxyClient";
 import type {ServerlessInvokeResult} from "@/api/cloudProxyClient";
@@ -61,6 +61,16 @@ export function ServerlessInvokePanel({
     invokeResult?.functionError || (invokeResult && invokeResult.statusCode >= 400),
   );
 
+    const formatPayload = () => {
+    try {
+      const formatted = JSON.stringify(JSON.parse(payload), null, 2);
+      setPayload(formatted);
+      setValidationError(null);
+    } catch {
+      setValidationError("Payload must be valid JSON before formatting.");
+    }
+  };
+
   const copyResponse = async () => {
     if (!invokeResult) return;
     await navigator.clipboard.writeText(invokeResult.payload || "");
@@ -101,28 +111,37 @@ export function ServerlessInvokePanel({
       </div>
 
       <div className="resource-create-inline">
-        <label>
-          <span className="metric-label">Event payload JSON</span>
-          <textarea
-            className="json-editor"
-            value={payload}
-            onChange={(event) => {
-              const value = event.target.value;
-              setPayload(value);
+      
+  <div className="inspector-section-header">
+  <label className="metric-label" htmlFor="serverless-invoke-payload">
+    Event payload JSON
+  </label>
 
-              try {
-                JSON.parse(value);
-                setValidationError(null);
-              } catch {
-                setValidationError("Payload must be valid JSON.");
-              }
-            }}
-            spellCheck={false}
-            placeholder="{}"
-            style={{minHeight: 140}}
-          />
-        </label>
+  <button className="button" type="button" onClick={formatPayload}>
+    <Wand2 size={13} />
+    Format JSON
+  </button>
+</div>
 
+<textarea
+  id="serverless-invoke-payload"
+  className="json-editor"
+  value={payload}
+  onChange={(event) => {
+    const value = event.target.value;
+    setPayload(value);
+
+    try {
+      JSON.parse(value);
+      setValidationError(null);
+    } catch {
+      setValidationError("Payload must be valid JSON.");
+    }
+  }}
+  spellCheck={false}
+  placeholder="{}"
+  style={{minHeight: 140}}
+/>
         {validationError && (
           <p className="error-text compact-text">
             {validationError}
