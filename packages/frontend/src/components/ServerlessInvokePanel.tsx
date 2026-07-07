@@ -71,6 +71,11 @@ export function ServerlessInvokePanel({
     }
   };
 
+const clearPayload = () => {
+  setPayload("{}");
+  setValidationError(null);
+};
+
   const copyResponse = async () => {
     if (!invokeResult) return;
     await navigator.clipboard.writeText(invokeResult.payload || "");
@@ -121,6 +126,10 @@ export function ServerlessInvokePanel({
     <Wand2 size={13} />
     Format JSON
   </button>
+
+<button className="button" type="button" onClick={clearPayload}>
+  Clear
+</button>
 </div>
 
 <textarea
