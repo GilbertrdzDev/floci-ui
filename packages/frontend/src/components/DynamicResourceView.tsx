@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronDown, ChevronUp, Info, Plus, RefreshCw } from "lucide-react";
+import { ChevronDown, ChevronUp, Info, Loader2, Plus, RefreshCw } from "lucide-react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   createCloudResource,
@@ -273,8 +273,10 @@ export function DynamicResourceView({
               serviceAvailability,
               resourcesLoading: resourcesQuery.isLoading,
               resourcesError: resourcesQuery.error,
+              isRetrying: resourcesQuery.isFetching,
               onSelect: setSelected,
               onDelete: (resource) => deleteMut.mutate(resource),
+              onRetry: () => resourcesQuery.refetch(),
             })}
           </section>
         </section>
@@ -383,8 +385,10 @@ function renderResourceSurface({
   serviceAvailability,
   resourcesLoading,
   resourcesError,
+  isRetrying,
   onSelect,
   onDelete,
+  onRetry,
 }: {
   schema: ServiceSchema;
   resources: CloudResource[];
@@ -395,8 +399,10 @@ function renderResourceSurface({
   serviceAvailability: CloudAvailability;
   resourcesLoading: boolean;
   resourcesError: unknown;
+  isRetrying: boolean;
   onSelect: (resource: CloudResource) => void;
   onDelete: (resource: CloudResource) => void;
+  onRetry?: () => void;
 }) {
   if (statusLoading) {
     return (
@@ -429,23 +435,26 @@ function renderResourceSurface({
   if (resourcesError) {
     return (
       <RuntimeNotice
-        title="Resource load failed"
-        detail="The adapter is registered, but the proxy could not load resources from the selected runtime."
+        title={`Unable to load ${schema.displayName}.`}
+        detail={`The proxy could not fetch ${schema.displayName} resources from the runtime.`}
         error={
           resourcesError instanceof Error
             ? resourcesError.message
             : "Unknown resource error"
         }
         state="unavailable"
+        isRetrying={isRetrying}
+        onRetry={onRetry}
       />
     );
   }
   if (resourcesLoading) {
     return (
       <RuntimeNotice
-        title="Loading resources"
-        detail="Reading normalized resources from the selected cloud adapter."
+        title={`Loading ${schema.displayName}...`}
+        detail={`Reading ${schema.displayName} resources from the runtime.`}
         state="pending"
+        showSpinner={true}
       />
     );
   }
@@ -467,17 +476,41 @@ function RuntimeNotice({
   detail,
   error,
   state,
+  showSpinner,
+  isRetrying,
+  onRetry,
 }: {
   title: string;
   detail: string;
   error?: string;
   state: "pending" | "unavailable";
+  showSpinner?: boolean;
+  isRetrying?: boolean;
+  onRetry?: () => void;
 }) {
   return (
     <div className={`runtime-notice ${state}`}>
+      {(showSpinner || isRetrying) && (
+        <Loader2
+          size={24}
+          className="spin"
+          style={{ marginBottom: 8, color: "var(--accent)" }}
+        />
+      )}
       <h3>{title}</h3>
       <p>{detail}</p>
       {error && <code>{error}</code>}
+      {onRetry && (
+        <button
+          className="button"
+          type="button"
+          style={{ marginTop: 12 }}
+          disabled={isRetrying}
+          onClick={() => { if (!isRetrying) onRetry(); }}
+        >
+          {isRetrying ? "Retrying\u2026" : "Retry"}
+        </button>
+      )}
     </div>
   );
 }
